@@ -86,6 +86,8 @@ void EmitClangAttrIsTypeDependent(const llvm::RecordKeeper &Records,
                                   llvm::raw_ostream &OS);
 void EmitClangAttrTextNodeDump(const llvm::RecordKeeper &Records,
                                llvm::raw_ostream &OS);
+void EmitClangAttrJSONNodeDump(const llvm::RecordKeeper &Records,
+                               llvm::raw_ostream &OS);
 void EmitClangAttrNodeTraverse(const llvm::RecordKeeper &Records,
                                llvm::raw_ostream &OS);
 void EmitClangAttrDocTable(const llvm::RecordKeeper &Records,

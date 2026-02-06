@@ -272,6 +272,7 @@ namespace {
     virtual void writeDump(raw_ostream &OS) const = 0;
     virtual void writeDumpChildren(raw_ostream &OS) const {}
     virtual void writeHasChildren(raw_ostream &OS) const { OS << "false"; }
+    virtual void writeJSONDump(raw_ostream &OS) const {}
 
     virtual bool isEnumArg() const { return false; }
     virtual bool isVariadicEnumArg() const { return false; }
@@ -409,6 +410,40 @@ namespace {
         llvm_unreachable("Unknown SimpleArgument type!");
       }
     }
+
+    void writeJSONDump(raw_ostream &OS) const override {
+      if (StringRef(type).ends_with("Decl *")) {
+        OS << "    JOS.attribute(\"" << getLowerName()
+           << "\", createBareDeclRef(SA->get" << getUpperName() << "()));\n";
+      } else if (type == "const IdentifierInfo *") {
+        OS << "    if (const IdentifierInfo *II = SA->get" << getUpperName()
+           << "())\n"
+           << "      JOS.attribute(\"" << getLowerName()
+           << "\", II->getName());\n";
+      } else if (type == "TypeSourceInfo *") {
+        if (isOptional())
+          OS << "    if (SA->get" << getUpperName() << "Loc())\n  ";
+        OS << "    JOS.attribute(\"" << getLowerName() << "\", SA->get"
+           << getUpperName() << "().getAsString());\n";
+      } else if (type == "bool") {
+        OS << "    attributeOnlyIfTrue(\"" << getLowerName() << "\", SA->get"
+           << getUpperName() << "());\n";
+      } else if (type == "int" || type == "unsigned") {
+        if (isOptional())
+          OS << "    if (SA->get" << getUpperName() << "() != 0)\n  ";
+        OS << "    JOS.attribute(\"" << getLowerName() << "\", SA->get"
+           << getUpperName() << "());\n";
+      } else if (type == "ParamIdx") {
+        if (isOptional())
+          OS << "    if (SA->get" << getUpperName() << "().isValid())\n  ";
+        OS << "    JOS.attribute(\"" << getLowerName() << "\", SA->get"
+           << getUpperName() << "().getSourceIndex());\n";
+      } else if (type == "OMPTraitInfo *") {
+        // OMPTraitInfo doesn't have a simple string representation for JSON
+      } else {
+        llvm_unreachable("Unknown SimpleArgument type!");
+      }
+    }
   };
 
   class DefaultSimpleArgument : public SimpleArgument {
@@ -510,6 +545,13 @@ namespace {
     void writeDump(raw_ostream &OS) const override {
       OS << "    OS << \" \\\"\" << SA->get" << getUpperName()
          << "() << \"\\\"\";\n";
+    }
+
+    void writeJSONDump(raw_ostream &OS) const override {
+      if (isOptional())
+        OS << "    if (!SA->get" << getUpperName() << "().empty())\n  ";
+      OS << "    JOS.attribute(\"" << getLowerName() << "\", SA->get"
+         << getUpperName() << "());\n";
     }
   };
 
@@ -697,6 +739,13 @@ namespace {
       return getArgEqualityFn().str() + "(" + GetStr(false) + ", Other." +
              GetStr(true) + ", Context)";
     }
+
+    void writeJSONDump(raw_ostream &OS) const override {
+      // AlignedArgument is handled through writeDumpChildren for expressions
+      OS << "    if (!SA->is" << getUpperName() << "Expr())\n";
+      OS << "      JOS.attribute(\"" << getLowerName() << "\", SA->get"
+         << getUpperName() << "Type()->getType().getAsString());\n";
+    }
   };
 
   class VariadicArgument : public Argument {
@@ -710,6 +759,10 @@ namespace {
     // Assumed to receive a parameter: raw_ostream OS.
     virtual void writeDumpImpl(raw_ostream &OS) const {
       OS << "      OS << \" \" << Val;\n";
+    }
+    // Assumed to receive a parameter: raw_ostream OS.
+    virtual void writeJSONDumpImpl(raw_ostream &OS) const {
+      OS << "      Arr.push_back(Val);\n";
     }
 
   public:
@@ -855,6 +908,15 @@ namespace {
       writeDumpImpl(OS);
     }
 
+    void writeJSONDump(raw_ostream &OS) const override {
+      OS << "    {\n";
+      OS << "      llvm::json::Array Arr;\n";
+      OS << "      for (const auto &Val : SA->" << RangeName << "())\n";
+      writeJSONDumpImpl(OS);
+      OS << "      JOS.attribute(\"" << getLowerName() << "\", std::move(Arr));\n";
+      OS << "    }\n";
+    }
+
     std::string emitAttrArgEqualityCheck() const override {
       auto GenIter = [&](bool IsOther, const std::string &Suffix) {
         std::string S = IsOther ? "Other." : "";
@@ -885,6 +947,10 @@ namespace {
       OS << "      else\n";
       OS << "        OS << \" TargetSync\";\n";
       OS << "    }\n";
+    }
+
+    void writeJSONDump(raw_ostream &OS) const override {
+      // OMPInteropInfo is complex; skip JSON output for now
     }
 
     void writePCHReadDecls(raw_ostream &OS) const override {
@@ -924,6 +990,10 @@ namespace {
 
     void writeDumpImpl(raw_ostream &OS) const override {
       OS << "      OS << \" \" << Val.getSourceIndex();\n";
+    }
+
+    void writeJSONDumpImpl(raw_ostream &OS) const override {
+      OS << "      Arr.push_back(Val.getSourceIndex());\n";
     }
   };
 
@@ -1048,6 +1118,15 @@ namespace {
       OS << "    }\n";
     }
 
+    void writeJSONDump(raw_ostream &OS) const override {
+      // Skip fake enum arguments
+      if (isFake())
+        return;
+      OS << "    JOS.attribute(\"" << getLowerName() << "\", " << getAttrName()
+         << "Attr::Convert" << shortType << "ToStr(SA->get" << getUpperName()
+         << "()));\n";
+    }
+
     void writeConversion(raw_ostream &OS, bool Header) const {
       if (Header) {
         OS << "  static bool ConvertStrTo" << shortType << "(StringRef Val, "
@@ -1108,6 +1187,11 @@ namespace {
       OS << "    OS << \"\\\"\" << " << getAttrName() << "Attr::Convert"
          << shortType << "ToStr(Val)"
          << "<< \"\\\"\";\n";
+    }
+
+    void writeJSONDumpImpl(raw_ostream &OS) const override {
+      OS << "      Arr.push_back(llvm::json::Value(" << getAttrName()
+         << "Attr::Convert" << shortType << "ToStr(Val)));\n";
     }
 
   public:
@@ -1290,6 +1374,12 @@ namespace {
     void writeDump(raw_ostream &OS) const override {
       OS << "    OS << \" \" << SA->get" << getUpperName() << "();\n";
     }
+
+    void writeJSONDump(raw_ostream &OS) const override {
+      OS << "    if (!SA->get" << getUpperName() << "().empty())\n";
+      OS << "      JOS.attribute(\"" << getLowerName() << "\", SA->get"
+         << getUpperName() << "().getAsString());\n";
+    }
   };
 
   class ExprArgument : public SimpleArgument {
@@ -1397,9 +1487,19 @@ namespace {
       OS << "SA->" << getLowerName() << "_begin() != "
          << "SA->" << getLowerName() << "_end()";
     }
+
+    void writeJSONDump(raw_ostream &OS) const override {
+      // Expressions are handled as children in the traversal, not as attributes
+    }
   };
 
   class VariadicIdentifierArgument : public VariadicArgument {
+  protected:
+    void writeJSONDumpImpl(raw_ostream &OS) const override {
+      OS << "      if (Val)\n";
+      OS << "        Arr.push_back(Val->getName());\n";
+    }
+
   public:
     VariadicIdentifierArgument(const Record &Arg, StringRef Attr)
         : VariadicArgument(Arg, Attr, "const IdentifierInfo *") {}
@@ -5194,6 +5294,34 @@ void EmitClangAttrNodeTraverse(const RecordKeeper &Records, raw_ostream &OS) {
       createArgument(*Arg, R.getName())->writeDumpChildren(SS);
     if (Attr->getValueAsBit("AcceptsExprPack"))
       VariadicExprArgument("DelayedArgs", R.getName()).writeDumpChildren(SS);
+    if (SS.tell()) {
+      OS << "  void Visit" << R.getName() << "Attr(const " << R.getName()
+         << "Attr *A) {\n";
+      if (!Args.empty())
+        OS << "    const auto *SA = cast<" << R.getName()
+           << "Attr>(A); (void)SA;\n";
+      OS << FunctionContent;
+      OS << "  }\n";
+    }
+  }
+}
+
+// Emits the code to dump an attribute to JSON.
+void EmitClangAttrJSONNodeDump(const RecordKeeper &Records, raw_ostream &OS) {
+  emitSourceFileHeader("Attribute JSON node dumper", OS, Records);
+
+  for (const auto *Attr : Records.getAllDerivedDefinitions("Attr")) {
+    const Record &R = *Attr;
+    if (!R.getValueAsBit("ASTNode"))
+      continue;
+
+    std::string FunctionContent;
+    raw_string_ostream SS(FunctionContent);
+
+    std::vector<const Record *> Args = R.getValueAsListOfDefs("Args");
+    for (const auto *Arg : Args)
+      createArgument(*Arg, R.getName())->writeJSONDump(SS);
+
     if (SS.tell()) {
       OS << "  void Visit" << R.getName() << "Attr(const " << R.getName()
          << "Attr *A) {\n";

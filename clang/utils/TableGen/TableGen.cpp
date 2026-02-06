@@ -45,6 +45,7 @@ enum ActionType {
   GenClangAttrParsedAttrKinds,
   GenClangAttrIsTypeDependent,
   GenClangAttrTextNodeDump,
+  GenClangAttrJSONNodeDump,
   GenClangAttrNodeTraverse,
   GenClangBasicReader,
   GenClangBasicWriter,
@@ -185,6 +186,8 @@ cl::opt<ActionType> Action(
                    "Generate clang is type dependent attribute code"),
         clEnumValN(GenClangAttrTextNodeDump, "gen-clang-attr-text-node-dump",
                    "Generate clang attribute text node dumper"),
+        clEnumValN(GenClangAttrJSONNodeDump, "gen-clang-attr-json-node-dump",
+                   "Generate clang attribute JSON node dumper"),
         clEnumValN(GenClangAttrNodeTraverse, "gen-clang-attr-node-traverse",
                    "Generate clang attribute traverser"),
         clEnumValN(GenClangBuiltins, "gen-clang-builtins",
@@ -432,6 +435,9 @@ bool ClangTableGenMain(raw_ostream &OS, const RecordKeeper &Records) {
     break;
   case GenClangAttrTextNodeDump:
     EmitClangAttrTextNodeDump(Records, OS);
+    break;
+  case GenClangAttrJSONNodeDump:
+    EmitClangAttrJSONNodeDump(Records, OS);
     break;
   case GenClangAttrNodeTraverse:
     EmitClangAttrNodeTraverse(Records, OS);

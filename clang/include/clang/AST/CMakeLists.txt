@@ -10,6 +10,10 @@ clang_tablegen(AttrTextNodeDump.inc -gen-clang-attr-text-node-dump
   SOURCE ../Basic/Attr.td
   TARGET ClangAttrTextDump)
 
+clang_tablegen(AttrJSONNodeDump.inc -gen-clang-attr-json-node-dump
+  SOURCE ../Basic/Attr.td
+  TARGET ClangAttrJSONDump)
+
 clang_tablegen(AttrNodeTraverse.inc -gen-clang-attr-node-traverse
   SOURCE ../Basic/Attr.td
   TARGET ClangAttrTraverse)
