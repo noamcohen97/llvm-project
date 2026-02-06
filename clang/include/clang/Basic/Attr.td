@@ -220,23 +220,29 @@ def ImplicitObjectParameter
                     "implicit object parameters">;
 
 // A single argument to an attribute
-class Argument<string name, bit optional, bit fake = 0> {
+class Argument<string name, bit optional, bit fake = 0, string jsonName = ""> {
   string Name = name;
   bit Optional = optional;
 
   /// A fake argument is used to store and serialize additional information
   /// in an attribute without actually changing its parsing or pretty-printing.
   bit Fake = fake;
+
+  /// Optional override for the JSON field name when dumping to JSON.
+  /// If empty, the lowercased Name is used.
+  string JSONName = jsonName;
 }
 
 class BoolArgument<string name, bit opt = 0, bit fake = 0> : Argument<name, opt,
                                                                       fake>;
 class IdentifierArgument<string name, bit opt = 0> : Argument<name, opt>;
 class IntArgument<string name, bit opt = 0> : Argument<name, opt>;
-class StringArgument<string name, bit opt = 0> : Argument<name, opt>;
+class StringArgument<string name, bit opt = 0, string jsonName = "">
+    : Argument<name, opt, /*fake=*/0, jsonName>;
 class ExprArgument<string name, bit opt = 0> : Argument<name, opt>;
-class DeclArgument<DeclNode kind, string name, bit opt = 0, bit fake = 0>
-    : Argument<name, opt, fake> {
+class DeclArgument<DeclNode kind, string name, bit opt = 0, bit fake = 0,
+                   string jsonName = "">
+    : Argument<name, opt, fake, jsonName> {
   DeclNode Kind = kind;
 }
 
@@ -983,7 +989,7 @@ def PatchableFunctionEntry
 def TLSModel : InheritableAttr {
   let Spellings = [GCC<"tls_model">];
   let Subjects = SubjectList<[TLSVar], ErrorDiag>;
-  let Args = [StringArgument<"Model">];
+  let Args = [StringArgument<"Model", /*opt=*/0, "tls_model">];
   let Documentation = [TLSModelDocs];
 }
 
@@ -1411,7 +1417,8 @@ def OSConsumesThis : InheritableAttr {
 
 def Cleanup : InheritableAttr {
   let Spellings = [GCC<"cleanup">];
-  let Args = [DeclArgument<Function, "FunctionDecl">];
+  let Args = [DeclArgument<Function, "FunctionDecl", /*opt=*/0, /*fake=*/0,
+                           "cleanup_function">];
   let Subjects = SubjectList<[LocalVar]>;
   let Documentation = [CleanupDocs];
   let IsTypeDependent = 1;
@@ -3272,7 +3279,7 @@ def InitPriority : InheritableAttr, TargetSpecificAttr<TargetSupportsInitPriorit
 
 def Section : InheritableAttr {
   let Spellings = [GCC<"section">, Declspec<"allocate">];
-  let Args = [StringArgument<"Name">];
+  let Args = [StringArgument<"Name", /*opt=*/0, "section_name">];
   let Subjects =
       SubjectList<[ Function, GlobalVar, ObjCMethod, ObjCProperty ], ErrorDiag>;
   let Documentation = [SectionDocs];

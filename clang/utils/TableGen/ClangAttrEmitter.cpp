@@ -220,6 +220,7 @@ namespace {
 
   class Argument {
     std::string lowerName, upperName;
+    std::string jsonName;
     StringRef attrName;
     bool isOpt;
     bool Fake;
@@ -237,14 +238,20 @@ namespace {
       // name conflicts with the macro definition.
       if (lowerName == "interface")
         lowerName = "interface_";
+      jsonName = lowerName;
     }
     Argument(const Record &Arg, StringRef Attr)
-        : Argument(Arg.getValueAsString("Name"), Attr) {}
+        : Argument(Arg.getValueAsString("Name"), Attr) {
+      std::string explicitJSONName = Arg.getValueAsString("JSONName").str();
+      if (!explicitJSONName.empty())
+        jsonName = std::move(explicitJSONName);
+    }
     virtual ~Argument() = default;
 
     StringRef getLowerName() const { return lowerName; }
     StringRef getUpperName() const { return upperName; }
     StringRef getAttrName() const { return attrName; }
+    StringRef getJSONName() const { return jsonName; }
 
     bool isOptional() const { return isOpt; }
     void setOptional(bool set) { isOpt = set; }
@@ -413,30 +420,30 @@ namespace {
 
     void writeJSONDump(raw_ostream &OS) const override {
       if (StringRef(type).ends_with("Decl *")) {
-        OS << "    JOS.attribute(\"" << getLowerName()
+        OS << "    JOS.attribute(\"" << getJSONName()
            << "\", createBareDeclRef(SA->get" << getUpperName() << "()));\n";
       } else if (type == "const IdentifierInfo *") {
         OS << "    if (const IdentifierInfo *II = SA->get" << getUpperName()
            << "())\n"
-           << "      JOS.attribute(\"" << getLowerName()
+           << "      JOS.attribute(\"" << getJSONName()
            << "\", II->getName());\n";
       } else if (type == "TypeSourceInfo *") {
         if (isOptional())
           OS << "    if (SA->get" << getUpperName() << "Loc())\n  ";
-        OS << "    JOS.attribute(\"" << getLowerName() << "\", SA->get"
+        OS << "    JOS.attribute(\"" << getJSONName() << "\", SA->get"
            << getUpperName() << "().getAsString());\n";
       } else if (type == "bool") {
-        OS << "    attributeOnlyIfTrue(\"" << getLowerName() << "\", SA->get"
+        OS << "    attributeOnlyIfTrue(\"" << getJSONName() << "\", SA->get"
            << getUpperName() << "());\n";
       } else if (type == "int" || type == "unsigned") {
         if (isOptional())
           OS << "    if (SA->get" << getUpperName() << "() != 0)\n  ";
-        OS << "    JOS.attribute(\"" << getLowerName() << "\", SA->get"
+        OS << "    JOS.attribute(\"" << getJSONName() << "\", SA->get"
            << getUpperName() << "());\n";
       } else if (type == "ParamIdx") {
         if (isOptional())
           OS << "    if (SA->get" << getUpperName() << "().isValid())\n  ";
-        OS << "    JOS.attribute(\"" << getLowerName() << "\", SA->get"
+        OS << "    JOS.attribute(\"" << getJSONName() << "\", SA->get"
            << getUpperName() << "().getSourceIndex());\n";
       } else if (type == "OMPTraitInfo *") {
         // OMPTraitInfo doesn't have a simple string representation for JSON
@@ -550,7 +557,7 @@ namespace {
     void writeJSONDump(raw_ostream &OS) const override {
       if (isOptional())
         OS << "    if (!SA->get" << getUpperName() << "().empty())\n  ";
-      OS << "    JOS.attribute(\"" << getLowerName() << "\", SA->get"
+      OS << "    JOS.attribute(\"" << getJSONName() << "\", SA->get"
          << getUpperName() << "());\n";
     }
   };
@@ -743,7 +750,7 @@ namespace {
     void writeJSONDump(raw_ostream &OS) const override {
       // AlignedArgument is handled through writeDumpChildren for expressions
       OS << "    if (!SA->is" << getUpperName() << "Expr())\n";
-      OS << "      JOS.attribute(\"" << getLowerName() << "\", SA->get"
+      OS << "      JOS.attribute(\"" << getJSONName() << "\", SA->get"
          << getUpperName() << "Type()->getType().getAsString());\n";
     }
   };
@@ -913,7 +920,7 @@ namespace {
       OS << "      llvm::json::Array Arr;\n";
       OS << "      for (const auto &Val : SA->" << RangeName << "())\n";
       writeJSONDumpImpl(OS);
-      OS << "      JOS.attribute(\"" << getLowerName() << "\", std::move(Arr));\n";
+      OS << "      JOS.attribute(\"" << getJSONName() << "\", std::move(Arr));\n";
       OS << "    }\n";
     }
 
@@ -1122,7 +1129,7 @@ namespace {
       // Skip fake enum arguments
       if (isFake())
         return;
-      OS << "    JOS.attribute(\"" << getLowerName() << "\", " << getAttrName()
+      OS << "    JOS.attribute(\"" << getJSONName() << "\", " << getAttrName()
          << "Attr::Convert" << shortType << "ToStr(SA->get" << getUpperName()
          << "()));\n";
     }
@@ -1377,7 +1384,7 @@ namespace {
 
     void writeJSONDump(raw_ostream &OS) const override {
       OS << "    if (!SA->get" << getUpperName() << "().empty())\n";
-      OS << "      JOS.attribute(\"" << getLowerName() << "\", SA->get"
+      OS << "      JOS.attribute(\"" << getJSONName() << "\", SA->get"
          << getUpperName() << "().getAsString());\n";
     }
   };
